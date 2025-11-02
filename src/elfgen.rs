@@ -39,8 +39,13 @@ impl Compiler {
             self.compile_instr(instr);
         }
 
-        // Generate epilogue (in case no explicit return)
-        self.emit_epilogue();
+        // If we reach here without explicit return, exit with code 0
+        // xor edi, edi (exit code 0)
+        self.code.extend_from_slice(&[0x31, 0xFF]);
+        // mov rax, 60 (sys_exit)
+        self.code.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00]);
+        // syscall
+        self.code.extend_from_slice(&[0x0F, 0x05]);
 
         // Generate ELF binary
         self.generate_elf(out_path)
@@ -68,17 +73,6 @@ impl Compiler {
         }
     }
 
-    /// Emit function epilogue: cleanup and return
-    fn emit_epilogue(&mut self) {
-        // pop rax (return value, or 0 if stack empty - we'll assume caller manages this)
-        // For now, just ensure rax has a value
-
-        // leave (mov rsp, rbp; pop rbp)
-        self.code.push(0xC9);
-
-        // ret
-        self.code.push(0xC3);
-    }
 
     /// Compile a single IR instruction to x86-64 machine code
     fn compile_instr(&mut self, instr: &Instr) {
@@ -204,54 +198,27 @@ impl Compiler {
 
     /// Print: pop value and print to stdout as decimal number
     fn emit_print(&mut self) {
-        // For now, we'll implement a simple version that prints the number
-        // using a call to a helper routine we'll embed
-
-        // pop rdi (value to print - first syscall argument)
-        self.code.push(0x5F);
-
-        // Call our print helper function
-        // We'll inline a simple syscall-based print for integers
-        self.emit_print_inline();
-    }
-
-    /// Inline implementation of integer printing
-    /// Expects value in RDI
-    fn emit_print_inline(&mut self) {
-        // For simplicity, we'll just write the number as-is using write syscall
-        // In a real implementation, we'd convert to ASCII
-
-        // For this MVP, let's just do a write syscall with the raw bytes
-        // This is a placeholder - proper implementation would convert int to string
-
-        // For now: write(1, &rdi, 8) - writes raw 8 bytes (not human readable!)
-        // Better: convert to decimal string first
-
-        // SIMPLIFIED: Just push a newline for now to show it executed
-        // mov rax, 1 (sys_write)
-        self.code.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00]);
-
-        // rdi is already set (fd will be wrong but this is a stub)
-        // Actually, let's set it properly:
-        // mov rdi, 1 (stdout)
-        self.code.extend_from_slice(&[0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00]);
-
-        // For MVP: write a stub message
-        // We'll improve this in the next iteration
-        // For now, skip the actual syscall and just continue
-        // (This is a placeholder - we need proper int-to-string conversion)
-    }
-
-    /// Return from function: pop return value into rax and return
-    fn emit_return(&mut self) {
-        // pop rax (return value)
+        // TODO: Implement proper integer-to-string conversion
+        // For now, this is a no-op - just pop the value and discard it
+        // pop rax (value to print)
         self.code.push(0x58);
 
-        // leave (mov rsp, rbp; pop rbp)
-        self.code.push(0xC9);
+        // Future implementation will:
+        // 1. Convert integer in rax to ASCII decimal string
+        // 2. Use sys_write to output to stdout
+        // 3. Call syscall
+    }
 
-        // ret
-        self.code.push(0xC3);
+    /// Return from function: exit program with return value
+    fn emit_return(&mut self) {
+        // pop rdi (return value becomes exit code)
+        self.code.push(0x5F);
+
+        // mov rax, 60 (sys_exit)
+        self.code.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00]);
+
+        // syscall
+        self.code.extend_from_slice(&[0x0F, 0x05]);
     }
 
     // ========== ELF Generation ==========
