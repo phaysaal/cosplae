@@ -196,17 +196,109 @@ impl Compiler {
 
     // ========== I/O Operations ==========
 
-    /// Print: pop value and print to stdout as decimal number
+    /// Print: pop value and print to stdout as decimal number followed by newline
     fn emit_print(&mut self) {
-        // TODO: Implement proper integer-to-string conversion
-        // For now, this is a no-op - just pop the value and discard it
-        // pop rax (value to print)
-        self.code.push(0x58);
+        // Pop the value to print into rax
+        self.code.push(0x58); // pop rax
 
-        // Future implementation will:
-        // 1. Convert integer in rax to ASCII decimal string
-        // 2. Use sys_write to output to stdout
-        // 3. Call syscall
+        // Save registers we'll use
+        self.code.push(0x53); // push rbx
+        self.code.push(0x51); // push rcx
+        self.code.push(0x52); // push rdx
+
+        // Allocate 20 bytes on stack for buffer (enough for 64-bit int + newline)
+        // sub rsp, 20
+        self.code.extend_from_slice(&[0x48, 0x83, 0xEC, 0x14]);
+
+        // Point rdi to end of buffer (we'll build string backwards)
+        // lea rdi, [rsp + 19]
+        self.code.extend_from_slice(&[0x48, 0x8D, 0x7C, 0x24, 0x13]);
+
+        // Add newline at the end
+        // mov byte [rdi], 10
+        self.code.extend_from_slice(&[0xC6, 0x07, 0x0A]);
+        // dec rdi
+        self.code.extend_from_slice(&[0x48, 0xFF, 0xCF]);
+
+        // Handle negative numbers
+        // test rax, rax
+        self.code.extend_from_slice(&[0x48, 0x85, 0xC0]);
+        // jns .positive (skip if not negative)
+        self.code.extend_from_slice(&[0x79, 0x05]);
+        // neg rax (make positive)
+        self.code.extend_from_slice(&[0x48, 0xF7, 0xD8]);
+        // push 1 (flag for negative)
+        self.code.extend_from_slice(&[0x6A, 0x01]);
+        // jmp .convert (skip pushing 0)
+        self.code.extend_from_slice(&[0xEB, 0x02]);
+        // .positive: push 0 (flag for positive)
+        self.code.extend_from_slice(&[0x6A, 0x00]);
+
+        // .convert: Convert to decimal digits (build string backwards)
+        // mov rbx, 10 (divisor)
+        self.code.extend_from_slice(&[0x48, 0xC7, 0xC3, 0x0A, 0x00, 0x00, 0x00]);
+
+        // .loop:
+        let loop_start = self.code.len();
+        // xor rdx, rdx (clear for division)
+        self.code.extend_from_slice(&[0x48, 0x31, 0xD2]);
+        // div rbx (rax / 10, quotient in rax, remainder in rdx)
+        self.code.extend_from_slice(&[0x48, 0xF7, 0xF3]);
+        // add dl, '0' (convert digit to ASCII)
+        self.code.extend_from_slice(&[0x80, 0xC2, 0x30]);
+        // mov [rdi], dl (store digit)
+        self.code.extend_from_slice(&[0x88, 0x17]);
+        // dec rdi
+        self.code.extend_from_slice(&[0x48, 0xFF, 0xCF]);
+        // test rax, rax (check if quotient is 0)
+        self.code.extend_from_slice(&[0x48, 0x85, 0xC0]);
+        // jnz .loop (continue if not zero)
+        let loop_offset = -(self.code.len() as i32 - loop_start as i32 + 2);
+        self.code.extend_from_slice(&[0x75, loop_offset as u8]);
+
+        // Check if negative flag is set
+        // pop rax (get negative flag)
+        self.code.push(0x58);
+        // test al, al
+        self.code.extend_from_slice(&[0x84, 0xC0]);
+        // jz .write (skip minus sign if positive)
+        self.code.extend_from_slice(&[0x74, 0x06]);
+        // mov byte [rdi], '-'
+        self.code.extend_from_slice(&[0xC6, 0x07, 0x2D]);
+        // dec rdi
+        self.code.extend_from_slice(&[0x48, 0xFF, 0xCF]);
+
+        // .write: Calculate string length and write to stdout
+        // inc rdi (move back to first character)
+        self.code.extend_from_slice(&[0x48, 0xFF, 0xC7]);
+
+        // Calculate length: (rsp + 20) - rdi
+        // lea rsi, [rsp + 20]
+        self.code.extend_from_slice(&[0x48, 0x8D, 0x74, 0x24, 0x14]);
+        // mov rdx, rsi
+        self.code.extend_from_slice(&[0x48, 0x89, 0xF2]);
+        // sub rdx, rdi (length)
+        self.code.extend_from_slice(&[0x48, 0x29, 0xFA]);
+
+        // rsi = rdi (buffer pointer)
+        self.code.extend_from_slice(&[0x48, 0x89, 0xFE]);
+
+        // sys_write(1, buffer, length)
+        // mov rax, 1 (sys_write)
+        self.code.extend_from_slice(&[0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00]);
+        // mov rdi, 1 (stdout)
+        self.code.extend_from_slice(&[0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00]);
+        // syscall
+        self.code.extend_from_slice(&[0x0F, 0x05]);
+
+        // Cleanup: deallocate buffer
+        // add rsp, 20
+        self.code.extend_from_slice(&[0x48, 0x83, 0xC4, 0x14]);
+
+        // Restore registers
+        self.code.push(0x5A); // pop rdx
+        self.code.push(0x59); // pop rcx
+        self.code.push(0x5B); // pop rbx
     }
 
     /// Return from function: exit program with return value
