@@ -3,8 +3,8 @@ use std::io::{Write, Seek, SeekFrom};
 use std::os::unix::fs::OpenOptionsExt; // for mode()
 use std::path::Path;
 
-/// Writes a native ELF64 Linux executable at `out_path` that prints "Hello\n" and exits(0).
-pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P) -> std::io::Result<()> {
+/// Writes a native ELF64 Linux executable at `out_path` that prints the given message and exits(0).
+pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P, message: &str) -> std::io::Result<()> {
     // ---- ELF layout plan ----------------------------------------------------
     // File offsets (hex):
     //   0x0000  ELF header (64 bytes)
@@ -30,27 +30,36 @@ pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P) -> std::io::Result<()> {
     //   syscall
     //
     // Encodings (RIP-rel for lea will be patched):
+    // The message in .rodata (will be placed right after code)
+    let msg = message.as_bytes();
+    let msg_len = msg.len();
+
     let mut code: Vec<u8> = vec![
         0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,       // mov rax, 1
         0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00,       // mov rdi, 1
         0x48, 0x8D, 0x35, 0, 0, 0, 0,                   // lea rsi, [rip+disp32]  <-- patch
-        0x48, 0xC7, 0xC2, 0x06, 0x00, 0x00, 0x00,       // mov rdx, 6
+        0x48, 0xC7, 0xC2, 0, 0, 0, 0,                   // mov rdx, msg_len  <-- patch
         0x0F, 0x05,                                     // syscall
         0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00,       // mov rax, 60
         0x48, 0x31, 0xFF,                               // xor rdi, rdi
         0x0F, 0x05,                                     // syscall
     ];
-    let lea_disp32_offset_in_code = 12 + 3; // index where disp32 bytes start in the code vec
+    let lea_disp32_offset_in_code = 14 + 3; // index where disp32 bytes start in the code vec (LEA starts at byte 14)
+    let rdx_len_offset_in_code = 21 + 3;    // index where msg_len bytes start in the code vec (MOV RDX starts at byte 21)
 
-    // The message in .rodata (right after code)
-    let msg = b"Hello\n";
+    // Patch the message length into mov rdx instruction
+    let len_bytes = (msg_len as u32).to_le_bytes();
+    code[rdx_len_offset_in_code + 0] = len_bytes[0];
+    code[rdx_len_offset_in_code + 1] = len_bytes[1];
+    code[rdx_len_offset_in_code + 2] = len_bytes[2];
+    code[rdx_len_offset_in_code + 3] = len_bytes[3];
 
     // Compute RIP-relative displacement for LEA:
     // disp32 = (addr(msg) - addr(next_instruction))
     // file layout: [code][msg]
     let code_start_file_off = OFF_SEG as usize;
     let msg_file_off = code_start_file_off + code.len();
-    let lea_next_ip_file_off = code_start_file_off + (12 + 7); // at end of LEA instruction
+    let lea_next_ip_file_off = code_start_file_off + (14 + 7); // at end of LEA instruction (LEA starts at byte 14)
     let disp = (msg_file_off as i64) - (lea_next_ip_file_off as i64);
     let disp_bytes = (disp as i32).to_le_bytes();
     code[lea_disp32_offset_in_code + 0] = disp_bytes[0];

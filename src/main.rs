@@ -40,8 +40,11 @@ fn main() -> Result<(), std::io::Error> {
         }
     }
     */
-    samplegen::emit_min_elf_hello("hello")?;
-    println!("✅ ELF file generated");
+    // Generate ELF that outputs the specified message
+    let message = "This is a custom message from cosplae!\n";
+    samplegen::emit_min_elf_hello("hello", message)?;
+    println!("✅ ELF file generated: ./hello");
+    println!("   Message: {:?}", message);
     Ok(())
 
 }
