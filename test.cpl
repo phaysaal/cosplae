@@ -1,0 +1,13 @@
+struct Point {
+    i32 x;
+    i32 y;
+};
+
+const i32 n = 5;
+
+i32 main() {
+    i32 x = 10;
+    print(x);
+    print(n);
+    return 0;
+}

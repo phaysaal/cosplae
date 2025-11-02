@@ -9,41 +9,32 @@ mod vm;
 use lexer::Lexer;
 use parser::Parser;
 use codegen::Codegen;
-
-mod samplegen;
+use std::fs;
+use std::env;
 
 fn main() -> Result<(), std::io::Error> {
-    // Example source (fits your Step 6 features)
-    
-    /*let source = r#"
-        struct Point {
-            i32 x;
-            i32 y;
-        };
+    // Get source file path from command line arguments
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: {} <source_file>", args[0]);
+        std::process::exit(1);
+    }
 
-        const i32 n = 5;
+    let source_path = &args[1];
+    let source = fs::read_to_string(source_path)?;
 
-        i32 main() {
-            i32 x = 10;
-            print(x);
-            print(n);
-            return 0;
-        }
-    "#;
-
-    match compile_and_run(source) {
+    match compile_and_run(&source) {
         Ok(code) => {
+            println!("✅ Program compiled and executed successfully");
             println!("(exit code: {code})");
         }
         Err(e) => {
-            println!("❌ {e}");
+            eprintln!("❌ {e}");
+            std::process::exit(1);
         }
     }
-    */
-    samplegen::emit_min_elf_hello("hello")?;
-    println!("✅ ELF file generated");
-    Ok(())
 
+    Ok(())
 }
 
 fn compile_and_run(source: &str) -> Result<i32, String> {
