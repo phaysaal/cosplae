@@ -3,7 +3,7 @@ use std::io::{Write, Seek, SeekFrom};
 use std::os::unix::fs::OpenOptionsExt; // for mode()
 use std::path::Path;
 
-/// Writes a native ELF64 Linux executable at `out_path` that prints "Hello\n" and exits(0).
+/// Writes a native ELF64 Linux executable at `out_path` that prints "hello" and exits(0).
 pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P) -> std::io::Result<()> {
     // ---- ELF layout plan ----------------------------------------------------
     // File offsets (hex):
@@ -23,7 +23,7 @@ pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P) -> std::io::Result<()> {
     //   mov rax, 1          ; sys_write
     //   mov rdi, 1          ; fd = 1 (stdout)
     //   lea rsi, [rip+msg]  ; buffer addr
-    //   mov rdx, 6          ; length
+    //   mov rdx, 5          ; length
     //   syscall
     //   mov rax, 60         ; sys_exit
     //   xor rdi, rdi        ; status = 0
@@ -34,23 +34,23 @@ pub fn emit_min_elf_hello<P: AsRef<Path>>(out_path: P) -> std::io::Result<()> {
         0x48, 0xC7, 0xC0, 0x01, 0x00, 0x00, 0x00,       // mov rax, 1
         0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00,       // mov rdi, 1
         0x48, 0x8D, 0x35, 0, 0, 0, 0,                   // lea rsi, [rip+disp32]  <-- patch
-        0x48, 0xC7, 0xC2, 0x06, 0x00, 0x00, 0x00,       // mov rdx, 6
+        0x48, 0xC7, 0xC2, 0x05, 0x00, 0x00, 0x00,       // mov rdx, 5
         0x0F, 0x05,                                     // syscall
         0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00,       // mov rax, 60
         0x48, 0x31, 0xFF,                               // xor rdi, rdi
         0x0F, 0x05,                                     // syscall
     ];
-    let lea_disp32_offset_in_code = 12 + 3; // index where disp32 bytes start in the code vec
+    let lea_disp32_offset_in_code = 14 + 3; // index where disp32 bytes start in the code vec
 
     // The message in .rodata (right after code)
-    let msg = b"Hello\n";
+    let msg = b"hello";
 
     // Compute RIP-relative displacement for LEA:
     // disp32 = (addr(msg) - addr(next_instruction))
     // file layout: [code][msg]
     let code_start_file_off = OFF_SEG as usize;
     let msg_file_off = code_start_file_off + code.len();
-    let lea_next_ip_file_off = code_start_file_off + (12 + 7); // at end of LEA instruction
+    let lea_next_ip_file_off = code_start_file_off + (14 + 7); // at end of LEA instruction
     let disp = (msg_file_off as i64) - (lea_next_ip_file_off as i64);
     let disp_bytes = (disp as i32).to_le_bytes();
     code[lea_disp32_offset_in_code + 0] = disp_bytes[0];
